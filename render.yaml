@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: karar-arama
+    env: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /saglik
+    envVars:
+      - key: PORT
+        value: 8080

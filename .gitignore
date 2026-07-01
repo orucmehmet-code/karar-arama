@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+kararlar.db
+indirilenler/*
+!indirilenler/.gitkeep
+kararlar/yargitay/_debug/
+*.log

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Karar Arama</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>⚖️ Karar Arama</h1>
+    <p class="alt-baslik">Yargıtay · Danıştay · Emsal (UYAP)</p>
+  </header>
+
+  <main>
+    <form id="aramaForm">
+      <label for="kelime">Aranacak kelime</label>
+      <input type="text" id="kelime" name="kelime" placeholder="örn. kira tahliye" required autocomplete="off">
+
+      <div class="tarih-satiri">
+        <div>
+          <label for="baslangic">Başlangıç</label>
+          <input type="text" id="baslangic" name="baslangic" placeholder="GG.AA.YYYY">
+        </div>
+        <div>
+          <label for="bitis">Bitiş</label>
+          <input type="text" id="bitis" name="bitis" placeholder="GG.AA.YYYY">
+        </div>
+      </div>
+
+      <label>Kaynaklar</label>
+      <div class="kaynak-grubu">
+        {% for key, bilgi in kaynaklar.items() %}
+        <label class="kaynak-rozeti">
+          <input type="checkbox" name="kaynaklar" value="{{ key }}" checked>
+          <span>{{ bilgi.ad }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <label class="anahtar-satiri">
+        <input type="checkbox" id="indir" name="indir" checked>
+        <span>PDF olarak indir (kapalıysa sadece arama yapar, indirmez)</span>
+      </label>
+
+      <div>
+        <label for="maks_sonuc">Her kaynaktan en fazla kaç karar?</label>
+        <input type="number" id="maks_sonuc" name="maks_sonuc"
+               value="{{ varsayilan_maks_sonuc }}" min="1" max="{{ mutlak_maks_sonuc }}" step="1">
+        <p class="ipucu">Örn. 3 kaynak seçiliyse ve burada 20 yazıyorsa, toplamda en fazla ~60 karar indirilir. Üst sınır: {{ mutlak_maks_sonuc }}.</p>
+      </div>
+
+      <button type="submit" id="baslatBtn">Ara ve İndir</button>
+    </form>
+
+    <section id="durumKutusu" class="gizli">
+      <h2>İlerleme</h2>
+      <div id="durumRozeti" class="rozet rozet-calisiyor">çalışıyor…</div>
+      <pre id="logAlani"></pre>
+
+      <a id="zipLink" class="buton gizli" href="#" download>📦 Tüm PDF'leri ZIP indir</a>
+    </section>
+  </main>
+
+  <footer>
+    <p>Bu araç kamuya açık karar arama sitelerini kullanır. Sonuçların doğruluğunu ilgili sitenin kendisinden teyit ediniz.</p>
+  </footer>
+
+<script>
+const form = document.getElementById("aramaForm");
+const durumKutusu = document.getElementById("durumKutusu");
+const durumRozeti = document.getElementById("durumRozeti");
+const logAlani = document.getElementById("logAlani");
+const zipLink = document.getElementById("zipLink");
+const baslatBtn = document.getElementById("baslatBtn");
+
+let anketTimer = null;
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  baslatBtn.disabled = true;
+  baslatBtn.textContent = "Başlatılıyor…";
+  durumKutusu.classList.remove("gizli");
+  zipLink.classList.add("gizli");
+  logAlani.textContent = "";
+  durumRozeti.className = "rozet rozet-calisiyor";
+  durumRozeti.textContent = "çalışıyor…";
+
+  const formData = new FormData(form);
+  const params = new URLSearchParams();
+  params.append("kelime", formData.get("kelime"));
+  params.append("baslangic", formData.get("baslangic") || "");
+  params.append("bitis", formData.get("bitis") || "");
+  params.append("indir", formData.get("indir") ? "true" : "false");
+  params.append("maks_sonuc", formData.get("maks_sonuc") || "20");
+  formData.getAll("kaynaklar").forEach(k => params.append("kaynaklar", k));
+
+  const res = await fetch("/baslat", { method: "POST", body: params });
+  const data = await res.json();
+  if (data.hata) {
+    durumRozeti.className = "rozet rozet-hata";
+    durumRozeti.textContent = data.hata;
+    baslatBtn.disabled = false;
+    baslatBtn.textContent = "Ara ve İndir";
+    return;
+  }
+  anketleBaslat(data.job_id);
+});
+
+function anketleBaslat(jobId) {
+  if (anketTimer) clearInterval(anketTimer);
+  anketTimer = setInterval(async () => {
+    const res = await fetch(`/durum/${jobId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    logAlani.textContent = data.log.join("\n");
+    logAlani.scrollTop = logAlani.scrollHeight;
+
+    if (data.durum === "tamam") {
+      clearInterval(anketTimer);
+      durumRozeti.className = "rozet rozet-tamam";
+      durumRozeti.textContent = "Tamamlandı";
+      baslatBtn.disabled = false;
+      baslatBtn.textContent = "Ara ve İndir";
+      if (data.zip_hazir) {
+        zipLink.href = `/indir-zip/${jobId}`;
+        zipLink.classList.remove("gizli");
+      }
+    } else if (data.durum === "hata") {
+      clearInterval(anketTimer);
+      durumRozeti.className = "rozet rozet-hata";
+      durumRozeti.textContent = "Hata oluştu, günlüğe bakın.";
+      baslatBtn.disabled = false;
+      baslatBtn.textContent = "Ara ve İndir";
+    }
+  }, 2000);
+}
+</script>
+</body>
+</html>
